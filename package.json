@@ -1,0 +1,59 @@
+{
+    "name": "@html-css-to-image/n8n-nodes-html-css-to-image",
+    "version": "0.1.0",
+    "description": "Generate images, website screenshots, PDFs, and signed image URLs with the HTML/CSS to Image API in n8n.",
+    "license": "MIT",
+    "homepage": "https://htmlcsstoimage.com",
+    "keywords": [
+        "n8n-community-node-package",
+        "html-to-image",
+        "screenshot",
+        "pdf",
+        "htmlcsstoimage"
+    ],
+    "author": {
+        "name": "HTML/CSS to Image API",
+        "email": "support@htmlcsstoimage.com"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/htmlcsstoimage/n8n-node.git"
+    },
+    "publishConfig": {
+        "access": "public"
+    },
+    "scripts": {
+        "generate:client": "node scripts/generate-client-properties.mjs",
+        "build": "npm run generate:client && n8n-node build && node scripts/bundle-client.mjs",
+        "build:watch": "tsc --watch",
+        "dev": "npm run generate:client && n8n-node dev",
+        "lint": "npm run generate:client && node scripts/lint.mjs",
+        "lint:fix": "npm run generate:client && node scripts/lint.mjs --fix",
+        "test": "npm run build && node --test tests/*.test.mjs",
+        "release": "n8n-node release",
+        "prepublishOnly": "n8n-node prerelease"
+    },
+    "files": [
+        "dist"
+    ],
+    "n8n": {
+        "n8nNodesApiVersion": 1,
+        "strict": true,
+        "credentials": [
+            "dist/credentials/HtmlCssToImageApi.credentials.js"
+        ],
+        "nodes": [
+            "dist/nodes/HtmlCssToImage/HtmlCssToImage.node.js"
+        ]
+    },
+    "devDependencies": {
+        "@n8n/node-cli": "0.39.3",
+        "esbuild": "^0.25.0",
+        "eslint": "9.32.0",
+        "prettier": "3.6.2",
+        "typescript": "5.9.2"
+    },
+    "peerDependencies": {
+        "n8n-workflow": "*"
+    }
+}
