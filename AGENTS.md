@@ -67,6 +67,10 @@ asking users to write JSON or encode structured values in strings.
 - The light/dark SVGs are official assets copied from
   `hcti-api-azure/AWSApi/wwwroot/images`.
 - The npm package should contain only `dist` and have no runtime `dependencies`.
+- Keep the exact `@emnapi/core`, `@emnapi/runtime`, and
+  `@emnapi/wasi-threads` dev dependency pins. npm 11 otherwise generates a
+  platform-dependent optional-peer lockfile on macOS that `npm ci` rejects on
+  GitHub's Linux runners.
 
 ## Verification
 

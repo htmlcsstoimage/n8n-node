@@ -47,6 +47,9 @@
         ]
     },
     "devDependencies": {
+        "@emnapi/core": "1.10.0",
+        "@emnapi/runtime": "1.10.0",
+        "@emnapi/wasi-threads": "1.2.1",
         "@n8n/node-cli": "0.39.3",
         "esbuild": "^0.25.0",
         "eslint": "9.32.0",
