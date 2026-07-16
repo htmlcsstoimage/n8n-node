@@ -1,6 +1,6 @@
 {
     "name": "@html-css-to-image/n8n-nodes-html-css-to-image",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Generate images, website screenshots, PDFs, and signed image URLs with the HTML/CSS to Image API in n8n.",
     "license": "MIT",
     "homepage": "https://htmlcsstoimage.com",

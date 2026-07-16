@@ -113,23 +113,22 @@ npm run dev
 
 ## Releasing
 
-Releases are published by GitHub Actions from version tags. Do not run
-`npm publish` locally.
+The version in `package.json` is the release switch. When a commit reaches
+`main`, GitHub Actions checks whether that exact version already exists on npm.
+If it is new, the workflow publishes it through npm Trusted Publishing and
+creates the matching Git tag automatically.
 
-For the initial `0.1.0` release:
-
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-For later releases, update `CHANGELOG.md`, create the version commit and tag,
-then push both:
+For a patch release:
 
 ```bash
-npm version patch
-git push origin main --follow-tags
+npm version patch --no-git-tag-version
 ```
+
+You can also update the version directly in `package.json` and
+`package-lock.json`. Update `CHANGELOG.md`, commit the version change, and push
+`main` with GitHub Desktop. Do not create a tag or run `npm publish` locally.
+
+Ordinary pushes that do not change the package version are skipped.
 
 ## Resources
 

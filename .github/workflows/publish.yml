@@ -1,86 +1,42 @@
-# Publishes this n8n community node package to npm on every version tag push.
+# Publishes a new package version whenever package.json changes to a version
+# that does not yet exist on npm. After publishing, the workflow creates the
+# matching annotated Git tag (for example, v0.1.1).
 #
-# Starting May 1 2026, n8n requires all community nodes to be published via
-# GitHub Actions with npm provenance statements. This workflow satisfies that
-# requirement. Provenance lets anyone cryptographically verify that a package
-# was built by this exact workflow, from this exact repository and commit.
+# npm Trusted Publishing is configured for:
+#   Organization: htmlcsstoimage
+#   Repository:   n8n-node
+#   Workflow:     publish.yml
+#   Action:       npm publish
 #
-# ─── PREREQUISITES ─────────────────────────────────────────────────────────────
-#
-# @n8n/node-cli ≥ 0.23.0 is required. Earlier versions do not support the
-# provenance flag passed by `npm run release` in CI, and the publish step will
-# fail. Check the version installed in this project with:
-#
-#   npm list @n8n/node-cli
-#
-# To upgrade, add @n8n/node-cli@latest as a dev dependency using your package manager.
-#
-# ─── ONE-TIME SETUP ────────────────────────────────────────────────────────────
-#
-# Option A — OIDC Trusted Publishing (recommended after the first publish):
-#   1. Log in to npmjs.com and open your package's settings.
-#   2. Under "Publish access" → "Trusted Publishers", click "Add a publisher".
-#   3. Select GitHub Actions and fill in:
-#        Repository owner: htmlcsstoimage
-#        Repository name:  n8n-node
-#        Workflow name:    publish.yml
-#        Environment:      (leave blank unless you use GitHub Environments)
-#        Allowed action:   npm publish
-#   4. Leave the NPM_TOKEN secret unset in this repository. GitHub's OIDC
-#      token is used instead — no secret ever touches your repo settings.
-#
-# Option B — npm Automation Token (fallback):
-#   1. On npmjs.com: Access Tokens → Generate New Token → Granular Access Token.
-#      Scope it to this package with "Read and write" publish permission.
-#   2. In GitHub: Settings → Secrets and variables → Actions → New secret.
-#      Name it NPM_TOKEN and paste the token value.
-#
-# Both options work with --provenance. Provenance is signed by GitHub's OIDC
-# infrastructure regardless of how npm authentication is handled.
-#
-# ─── TAG CONVENTION ────────────────────────────────────────────────────────────
-#
-# This workflow triggers on tags matching "v*.*.*" (e.g. v0.2.0).
-#
-# ─── RELEASE PROCESS ───────────────────────────────────────────────────────────
-#
-# For the first release, commit and push the project, then create its existing
-# package version as a tag:
-#
-#   git tag v0.1.0
-#   git push origin v0.1.0
-#
-# For later releases, update the changelog and run `npm version patch` (or
-# `minor`/`major`), then push main and its generated tag:
-#
-#   git push origin main --follow-tags
-#
-# The tag triggers this workflow. `npm run release` is invoked by CI to lint,
-# build, and publish with provenance; do not publish directly from a workstation.
+# No npm token or GitHub Actions secret is required.
 
 name: Publish
 
 on:
   push:
-    tags:
-      # Matches v0.1.0, v1.2.3, v2.0.0-rc.1, etc.
-      - 'v*.*.*'
+    branches:
+      - main
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   publish:
-    name: Publish to npm
+    name: Publish new version
     runs-on: ubuntu-latest
 
     permissions:
-      # Required to mint an OIDC token for npm provenance attestation.
+      # Required for npm trusted publishing and provenance.
       id-token: write
-      # Scoped down from the default (write) for least-privilege publishing.
-      contents: read
+      # Required to create the version tag after a successful publish.
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -89,14 +45,47 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           package-manager-cache: false
 
-      - name: Install dependencies
-        run: 'npm ci'
+      - name: Check package version
+        id: version
+        shell: bash
+        run: |
+          package_name="$(node -p "require('./package.json').name")"
+          package_version="$(node -p "require('./package.json').version")"
+          tag="v${package_version}"
 
-      - name: Release
-        # Publishes to npm with a provenance attestation (requires id-token: write above).
-        # Lint and build run automatically as part of the release process.
-        run: 'npm run release'
+          echo "package_name=${package_name}" >> "$GITHUB_OUTPUT"
+          echo "package_version=${package_version}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+          if npm view "${package_name}@${package_version}" version >/dev/null 2>&1; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "${package_name}@${package_version} already exists on npm."
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "${package_name}@${package_version} is new and will be published."
+          fi
+
+      - name: Install dependencies
+        if: steps.version.outputs.publish == 'true'
+        run: npm ci
+
+      - name: Publish to npm
+        if: steps.version.outputs.publish == 'true'
+        # In GitHub Actions, n8n-node release lints, builds, and runs npm publish.
+        # npm authenticates through trusted publishing and attaches provenance.
+        run: npm run release
+
+      - name: Create version tag
+        shell: bash
         env:
-          # Set for the initial token-authenticated publish. When unset, npm
-          # automatically uses this workflow's trusted-publishing OIDC token.
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if git rev-parse --verify --quiet "refs/tags/${TAG}" >/dev/null; then
+            echo "${TAG} already exists."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag --annotate "${TAG}" --message "Release ${TAG}"
+          git push origin "${TAG}"
