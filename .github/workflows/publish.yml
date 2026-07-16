@@ -1,5 +1,5 @@
-# Publishes a new package version whenever package.json changes to a version
-# that does not yet exist on npm. After publishing, the workflow creates the
+# After CI succeeds for a push to main, publishes the tested package version
+# when it does not yet exist on npm. After publishing, the workflow creates the
 # matching annotated Git tag (for example, v0.1.1).
 #
 # npm Trusted Publishing is configured for:
@@ -13,17 +13,24 @@
 name: Publish
 
 on:
-  push:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
     branches:
       - main
 
 concurrency:
-  group: publish-${{ github.ref }}
+  group: publish-${{ github.event.workflow_run.head_sha }}
   cancel-in-progress: false
 
 jobs:
   publish:
     name: Publish new version
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
 
     permissions:
@@ -37,6 +44,8 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
+          # Publish the exact commit that completed CI, not a newer main commit.
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v6

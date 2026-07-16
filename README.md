@@ -114,9 +114,10 @@ npm run dev
 ## Releasing
 
 The version in `package.json` is the release switch. When a commit reaches
-`main`, GitHub Actions checks whether that exact version already exists on npm.
-If it is new, the workflow publishes it through npm Trusted Publishing and
-creates the matching Git tag automatically.
+`main`, CI runs lint, build, and tests first. Only after CI succeeds does the
+publish workflow check whether that exact version already exists on npm. If it
+is new, the workflow publishes the exact tested commit through npm Trusted
+Publishing and creates the matching Git tag automatically.
 
 For a patch release:
 

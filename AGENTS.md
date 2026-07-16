@@ -82,9 +82,10 @@ npm test
 npm pack --dry-run
 ```
 
-Run lint and build/test sequentially. `scripts/lint.mjs` temporarily moves the
-client submodule outside the repository so strict n8n linting does not scan the
-vendored project; parallel commands can race with that move.
+`scripts/lint.mjs` runs strict n8n linting in a temporary source-only copy so
+the vendored client is not scanned. It must never move or remove the client
+submodule from the real worktree because Git clients can mistake that temporary
+absence for a deletion.
 
 All strict n8n lint errors, TypeScript errors, tests, and `git diff --check`
 issues must be resolved before handoff.
