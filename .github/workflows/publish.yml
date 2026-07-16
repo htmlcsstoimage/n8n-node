@@ -92,14 +92,11 @@ jobs:
       - name: Install dependencies
         run: 'npm ci'
 
-      - name: Release with npm token
-        if: ${{ secrets.NPM_TOKEN != '' }}
+      - name: Release
         # Publishes to npm with a provenance attestation (requires id-token: write above).
         # Lint and build run automatically as part of the release process.
         run: 'npm run release'
         env:
+          # Set for the initial token-authenticated publish. When unset, npm
+          # automatically uses this workflow's trusted-publishing OIDC token.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Release with trusted publishing
-        if: ${{ secrets.NPM_TOKEN == '' }}
-        run: 'npm run release'
