@@ -14,11 +14,70 @@ import {
 import { htmlClientOptions, urlClientOptions } from './generatedProperties';
 import {
 	addBinaryOutput,
+	assertDeleteSuccess,
 	assertSuccess,
 	makeHtmlRequest,
 	makeUrlRequest,
 	parseTemplateValues,
 } from './helpers';
+
+const renderFormatOptions = [
+	{ name: 'PNG', value: 'png' },
+	{ name: 'JPG', value: 'jpg' },
+	{ name: 'WebP', value: 'webp' },
+	{ name: 'PDF', value: 'pdf' },
+];
+
+const optionalRenderFormatOptions = [
+	{ name: 'API Default', value: '' },
+	...renderFormatOptions,
+];
+
+const requestHeadersProperty = {
+	displayName: 'Headers',
+	name: 'headers',
+	type: 'fixedCollection' as const,
+	typeOptions: {
+		multipleValues: true,
+	},
+	placeholder: 'Add Header',
+	default: {},
+	description: 'Custom HTTP headers to send to the webpage origin',
+	options: [
+		{
+			displayName: 'Header',
+			name: 'header',
+			values: [
+				{
+					displayName: 'Name',
+					name: 'name',
+					type: 'string' as const,
+					default: '',
+					placeholder: 'Authorization',
+				},
+				{
+					displayName: 'Value',
+					name: 'value',
+					type: 'string' as const,
+					default: '',
+					typeOptions: { password: true },
+				},
+			],
+		},
+	],
+};
+
+const additionalOriginsIndex = urlClientOptions.findIndex(
+	(property) => property.name === 'additionalHeaderOrigins',
+);
+const urlOptions =
+	additionalOriginsIndex === -1
+		? [...urlClientOptions, requestHeadersProperty]
+		: [
+				...urlClientOptions.slice(0, additionalOriginsIndex),
+				requestHeadersProperty,
+				...urlClientOptions.slice(additionalOriginsIndex),
+			];
 
 const pdfDimension = (displayName: string, name: string, description: string) => ({
 	displayName,
@@ -109,12 +168,7 @@ const outputProperties = [
 				output: ['binary', 'both'],
 			},
 		},
-		options: [
-			{ name: 'PNG', value: 'png' },
-			{ name: 'JPG', value: 'jpg' },
-			{ name: 'WebP', value: 'webp' },
-			{ name: 'PDF', value: 'pdf' },
-		],
+		options: renderFormatOptions,
 		default: 'png',
 	},
 	{
@@ -189,6 +243,12 @@ export class HtmlCssToImage implements INodeType {
 						description: 'Take a screenshot of a webpage',
 					},
 					{
+						name: 'Delete',
+						value: 'deleteImage',
+						action: 'Delete an image',
+						description: 'Permanently delete an image by ID',
+					},
+					{
 						name: 'Generate Signed URL',
 						value: 'generateSignedUrl',
 						action: 'Generate a signed image URL',
@@ -196,6 +256,15 @@ export class HtmlCssToImage implements INodeType {
 					},
 				],
 				default: 'createHtml',
+			},
+			{
+				displayName: 'Image ID',
+				name: 'imageId',
+				type: 'string',
+				displayOptions: { show: { operation: ['deleteImage'] } },
+				default: '',
+				required: true,
+				description: 'ID of the image to permanently delete',
 			},
 			{
 				displayName: 'HTML',
@@ -250,6 +319,15 @@ export class HtmlCssToImage implements INodeType {
 				description: 'Specific template version to render; leave empty for the latest',
 			},
 			{
+				displayName: 'Format',
+				name: 'templateFormat',
+				type: 'options',
+				displayOptions: { show: { operation: ['createTemplate'] } },
+				default: '',
+				options: optionalRenderFormatOptions,
+				description: 'File format used in the URL returned by the image creation request',
+			},
+			{
 				displayName: 'Options',
 				name: 'options',
 				type: 'collection',
@@ -265,7 +343,7 @@ export class HtmlCssToImage implements INodeType {
 				placeholder: 'Add Option',
 				displayOptions: { show: { operation: ['createUrl'] } },
 				default: {},
-				options: urlClientOptions,
+				options: urlOptions,
 			},
 			{
 				displayName: 'PDF Options',
@@ -323,6 +401,17 @@ export class HtmlCssToImage implements INodeType {
 				default: null,
 			},
 			{
+				displayName: 'Format',
+				name: 'signedTemplateFormat',
+				type: 'options',
+				displayOptions: {
+					show: { operation: ['generateSignedUrl'], signedUrlType: ['template'] },
+				},
+				default: '',
+				options: optionalRenderFormatOptions,
+				description: 'File format rendered by the signed URL',
+			},
+			{
 				displayName: 'URL',
 				name: 'signedUrl',
 				type: 'string',
@@ -342,7 +431,7 @@ export class HtmlCssToImage implements INodeType {
 					show: { operation: ['generateSignedUrl'], signedUrlType: ['url'] },
 				},
 				default: {},
-				options: urlClientOptions,
+				options: urlOptions,
 			},
 			...outputProperties.map((property) => ({
 				...property,
@@ -369,6 +458,18 @@ export class HtmlCssToImage implements INodeType {
 			try {
 				const operation = this.getNodeParameter('operation', itemIndex) as string;
 
+				if (operation === 'deleteImage') {
+					const result = await client.deleteImage(
+						this.getNodeParameter('imageId', itemIndex) as string,
+					);
+					assertDeleteSuccess(this, result, itemIndex);
+					returnData.push({
+						json: result as IDataObject,
+						pairedItem: { item: itemIndex },
+					});
+					continue;
+				}
+
 				if (operation === 'generateSignedUrl') {
 					const type = this.getNodeParameter('signedUrlType', itemIndex) as 'template' | 'url';
 					const signedUrl =
@@ -380,6 +481,12 @@ export class HtmlCssToImage implements INodeType {
 									),
 									(this.getNodeParameter('signedTemplateVersion', itemIndex, 0) as number) ||
 										undefined,
+									(this.getNodeParameter('signedTemplateFormat', itemIndex, '') as
+										| 'png'
+										| 'jpg'
+										| 'webp'
+										| 'pdf'
+										| '') || undefined,
 								)
 							: client.generateCreateAndRenderUrl(
 									makeUrlRequest(
@@ -417,6 +524,13 @@ export class HtmlCssToImage implements INodeType {
 						),
 						template_version:
 							(this.getNodeParameter('templateVersion', itemIndex, 0) as number) || undefined,
+						format:
+							(this.getNodeParameter('templateFormat', itemIndex, '') as
+								| 'png'
+								| 'jpg'
+								| 'webp'
+								| 'pdf'
+								| '') || undefined,
 					} as CreateTemplatedImageRequest;
 					Object.defineProperty(request, '__type', {
 						value: 'templated',
@@ -439,7 +553,12 @@ export class HtmlCssToImage implements INodeType {
 						this,
 						outputItem,
 						result,
-						this.getNodeParameter('format', itemIndex, 'png') as 'png' | 'jpg' | 'webp' | 'pdf',
+						(this.getNodeParameter('format', itemIndex, 'png') as
+							| 'png'
+							| 'jpg'
+							| 'webp'
+							| 'pdf'
+							| null) ?? 'png',
 						this.getNodeParameter('binaryPropertyName', itemIndex, 'data') as string,
 					);
 				}

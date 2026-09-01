@@ -6,7 +6,11 @@ import {
 	CreateUrlImageRequest,
 	PDFOptions,
 } from './htmlCssToImageClient.bundle.js';
-import type { CreateImageResponse, CreateImageSuccessResponse } from './htmlCssToImageClient.bundle.js';
+import type {
+	CreateImageResponse,
+	CreateImageSuccessResponse,
+	DeleteImageResponse,
+} from './htmlCssToImageClient.bundle.js';
 import { apiNameByParameter } from './generatedProperties';
 
 type ClientOptions = Record<string, unknown>;
@@ -15,8 +19,6 @@ type PdfValue = { value: number; unit: PdfUnit };
 
 function hasValue(value: unknown): boolean {
 	if (value === undefined || value === null || value === '') return false;
-	if (typeof value === 'boolean') return value;
-	if (typeof value === 'number') return value !== 0;
 	return true;
 }
 
@@ -74,6 +76,32 @@ function mapStringArray(value: unknown): string[] | undefined {
 	return values.length > 0 ? values : undefined;
 }
 
+function mapHeaders(value: unknown): Record<string, string> | undefined {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+
+	const entries = (value as { header?: unknown }).header;
+	if (!Array.isArray(entries)) {
+		const headers = Object.fromEntries(
+			Object.entries(value).filter(
+				(entry): entry is [string, string] =>
+					entry[0].trim().length > 0 && typeof entry[1] === 'string',
+			),
+		);
+		return Object.keys(headers).length > 0 ? headers : undefined;
+	}
+
+	const headers: Record<string, string> = {};
+	for (const entry of entries) {
+		if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+		const name = (entry as { name?: unknown }).name;
+		const headerValue = (entry as { value?: unknown }).value;
+		if (typeof name !== 'string' || name.trim().length === 0) continue;
+		if (typeof headerValue !== 'string') continue;
+		headers[name.trim()] = headerValue;
+	}
+	return Object.keys(headers).length > 0 ? headers : undefined;
+}
+
 export function mapClientOptions(options: IDataObject): ClientOptions {
 	validateDimensions(options);
 	const mapped: ClientOptions = {};
@@ -82,9 +110,14 @@ export function mapClientOptions(options: IDataObject): ClientOptions {
 		if (!hasValue(value)) continue;
 		const apiName =
 			apiNameByParameter[parameterName as keyof typeof apiNameByParameter] ?? parameterName;
-		if (apiName === 'google_fonts') {
-			const fonts = mapStringArray(value);
-			if (fonts) mapped[apiName] = fonts;
+		if (apiName === 'google_fonts' || apiName === 'additional_header_origins') {
+			const values = mapStringArray(value);
+			if (values) mapped[apiName] = values;
+			continue;
+		}
+		if (apiName === 'headers') {
+			const headers = mapHeaders(value);
+			if (headers) mapped[apiName] = headers;
 			continue;
 		}
 		mapped[apiName] = value;
@@ -215,6 +248,21 @@ export function assertSuccess(
 	});
 }
 
+export function assertDeleteSuccess(
+	executeFunctions: IExecuteFunctions,
+	result: DeleteImageResponse,
+	itemIndex: number,
+): asserts result is { success: true } {
+	if (result.success) return;
+	const validation = result.validation_errors
+		?.map((error) => `${error.path}: ${error.message}`)
+		.join('; ');
+	throw new NodeOperationError(executeFunctions.getNode(), result.message ?? result.error, {
+		itemIndex,
+		description: validation ?? result.error,
+	});
+}
+
 const formats = {
 	png: { extension: 'png', mimeType: 'image/png' },
 	jpg: { extension: 'jpg', mimeType: 'image/jpeg' },
@@ -230,7 +278,8 @@ export async function addBinaryOutput(
 	binaryPropertyName: string,
 ): Promise<void> {
 	const file = formats[format];
-	const response = await fetch(`${image.url}.${file.extension}`);
+	const imageUrl = image.url.replace(/\.(?:png|jpe?g|webp|pdf)$/i, '');
+	const response = await fetch(`${imageUrl}.${file.extension}`);
 	if (!response.ok) {
 		throw new Error(`Could not download generated ${file.extension.toUpperCase()} file`);
 	}

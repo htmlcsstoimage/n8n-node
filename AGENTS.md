@@ -41,10 +41,11 @@ asking users to write JSON or encode structured values in strings.
 
 ## Current product decisions
 
-- Initial operations are HTML/CSS, webpage URL, template, and signed URL.
+- Operations are HTML/CSS, webpage URL, template, signed URL, and single-image deletion.
 - Batch creation is intentionally not exposed in v1. Do not reintroduce a
   JSON-only batch UI. A future batch UI must support mixed HTML and URL
   variations with a coherent native n8n editor.
+- Batch deletion is not exposed; n8n can process one image ID per input item.
 - Image listing is intentionally not exposed.
 - Template values use `assignmentCollection` so users can add dynamically named,
   typed properties.

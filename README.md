@@ -21,6 +21,7 @@ The community package name is:
 - Take a screenshot of a webpage URL
 - Render a saved template with JSON values
 - Generate signed template or webpage URLs that render on demand
+- Delete an image by ID
 - Return image metadata, a binary PNG/JPG/WebP/PDF, or both
 
 ## Credentials
@@ -42,6 +43,11 @@ file attachment, such as email, Slack, S3, or Google Drive.
 
 Template values use n8n's typed field editor. Add each template variable by name
 and choose its value type, or use an expression that resolves to an object.
+
+URL screenshots support custom request headers with a repeatable name/value
+editor, additional allowed header origins, subrequest forwarding, and HCTI
+request identification. The create operations also expose response URL format,
+deduplication duration, storage destinations, and transparent backgrounds.
 
 ## Example workflows
 

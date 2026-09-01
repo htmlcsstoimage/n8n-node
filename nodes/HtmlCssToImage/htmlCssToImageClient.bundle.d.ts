@@ -13,6 +13,10 @@ export type CreateImageErrorResponse = {
 
 export type CreateImageResponse = CreateImageSuccessResponse | CreateImageErrorResponse;
 
+export type DeleteImageResponse = { success: true } | CreateImageErrorResponse;
+
+export type RenderImageFormat = 'png' | 'jpg' | 'webp' | 'pdf';
+
 export type CreateImageBatchResponse =
 	| { success: true; images: CreateImageSuccessResponse[] }
 	| CreateImageErrorResponse;
@@ -51,6 +55,7 @@ export type CreateTemplatedImageRequest = {
 	template_id: string;
 	template_values: Record<string, unknown>;
 	template_version?: number;
+	format?: RenderImageFormat;
 };
 
 export class HtmlCssToImageClient {
@@ -61,6 +66,8 @@ export class HtmlCssToImageClient {
 			| CreateUrlImageRequest
 			| CreateTemplatedImageRequest,
 	): Promise<CreateImageResponse>;
+	deleteImage(imageId: string): Promise<DeleteImageResponse>;
+	deleteImageBatch(imageIds: readonly string[]): Promise<DeleteImageResponse>;
 	createImageBatch(
 		variations: Array<CreateHtmlCssImageRequest | CreateUrlImageRequest>,
 		defaultOptions?: CreateHtmlCssImageRequest | CreateUrlImageRequest,
@@ -70,5 +77,6 @@ export class HtmlCssToImageClient {
 		templateId: string,
 		templateValues: Record<string, unknown>,
 		templateVersion?: number,
+		format?: RenderImageFormat,
 	): string;
 }
