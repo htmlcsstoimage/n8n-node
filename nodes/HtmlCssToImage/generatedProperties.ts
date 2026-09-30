@@ -2,7 +2,7 @@
  * Generated from vendor/html-css-to-image-client/src/types.
  * Do not edit by hand. Run: npm run generate:client
  */
-import type { INodeProperties } from 'n8n-workflow';
+import type { INodeProperties, INodePropertyOptions } from 'n8n-workflow';
 
 export const apiNameByParameter = {
   "format": "format",
@@ -23,6 +23,7 @@ export const apiNameByParameter = {
   "viewportLandscape": "viewport_landscape",
   "mediaType": "media_type",
   "proxyId": "proxy_id",
+  "requestOverrides": "request_overrides",
   "storageDestinationId": "storage_destination_id",
   "jumboMaxWidth": "jumbo_max_width",
   "jumboMaxHeight": "jumbo_max_height",
@@ -36,6 +37,92 @@ export const apiNameByParameter = {
   "fullScreen": "full_screen",
   "blockConsentBanners": "block_consent_banners"
 } as const;
+
+export const requestOverrideResourceValues = [
+  "beacon",
+  "document",
+  "stylesheet",
+  "image",
+  "image_set",
+  "media",
+  "font",
+  "script",
+  "text_track",
+  "xhr",
+  "fetch",
+  "event_source",
+  "manifest",
+  "ping",
+  "img",
+  "other"
+] as const;
+
+export const requestOverrideResourceOptions: INodePropertyOptions[] = [
+  {
+    "name": "Beacon",
+    "value": "beacon"
+  },
+  {
+    "name": "Document",
+    "value": "document"
+  },
+  {
+    "name": "Stylesheet",
+    "value": "stylesheet"
+  },
+  {
+    "name": "Image",
+    "value": "image"
+  },
+  {
+    "name": "Image Set",
+    "value": "image_set"
+  },
+  {
+    "name": "Media",
+    "value": "media"
+  },
+  {
+    "name": "Font",
+    "value": "font"
+  },
+  {
+    "name": "Script",
+    "value": "script"
+  },
+  {
+    "name": "Text Track",
+    "value": "text_track"
+  },
+  {
+    "name": "XHR",
+    "value": "xhr"
+  },
+  {
+    "name": "Fetch",
+    "value": "fetch"
+  },
+  {
+    "name": "Event Source",
+    "value": "event_source"
+  },
+  {
+    "name": "Manifest",
+    "value": "manifest"
+  },
+  {
+    "name": "Ping",
+    "value": "ping"
+  },
+  {
+    "name": "Img",
+    "value": "img"
+  },
+  {
+    "name": "Other",
+    "value": "other"
+  }
+];
 
 export const htmlClientOptions: INodeProperties[] = [
   {
@@ -276,7 +363,7 @@ export const htmlClientOptions: INodeProperties[] = [
   {
     "displayName": "Disable Twemoji",
     "name": "disableTwemoji",
-    "description": "Disable Twemoji fallback rendering.",
+    "description": "HTML/CSS images use Twemoji by default; true disables it. URL images inject Twemoji only when explicitly false; omission or true leaves the page's emoji handling unchanged.",
     "type": "boolean",
     "default": null
   }
@@ -549,7 +636,7 @@ export const urlClientOptions: INodeProperties[] = [
   {
     "displayName": "Disable Twemoji",
     "name": "disableTwemoji",
-    "description": "Disable Twemoji fallback rendering.",
+    "description": "HTML/CSS images use Twemoji by default; true disables it. URL images inject Twemoji only when explicitly false; omission or true leaves the page's emoji handling unchanged.",
     "type": "boolean",
     "default": null
   }

@@ -56,6 +56,8 @@ asking users to write JSON or encode structured values in strings.
   together.
 - Viewport width/height and jumbo max width/height must each be supplied as
   pairs.
+- Request overrides use a separate repeatable block-rule editor with an optional
+  URL pattern and/or resource types. They are not exposed for signed URLs.
 - Optional scalar client fields default to `null` in the n8n UI.
 - Credentials and signed URL secrets are server-side only.
 

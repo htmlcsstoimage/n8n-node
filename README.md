@@ -47,7 +47,8 @@ and choose its value type, or use an expression that resolves to an object.
 URL screenshots support custom request headers with a repeatable name/value
 editor, additional allowed header origins, subrequest forwarding, and HCTI
 request identification. The create operations also expose response URL format,
-deduplication duration, storage destinations, and transparent backgrounds.
+deduplication duration, storage destinations, transparent backgrounds, and typed
+request override rules for blocking selected browser network requests.
 
 ## Example workflows
 

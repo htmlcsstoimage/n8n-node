@@ -102,6 +102,33 @@ function mapHeaders(value: unknown): Record<string, string> | undefined {
 	return Object.keys(headers).length > 0 ? headers : undefined;
 }
 
+function mapRequestOverrides(value: unknown): unknown[] | undefined {
+	if (!value || typeof value !== 'object') return undefined;
+
+	const entries = Array.isArray(value)
+		? value
+		: (value as { rule?: unknown }).rule;
+	if (!Array.isArray(entries) || entries.length === 0) return undefined;
+
+	return entries.map((entry) => {
+		if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+			return entry;
+		}
+
+		const rule = entry as Record<string, unknown>;
+		const rawResourceTypes = rule.resourceTypes ?? rule.resource_types;
+		const hasResourceTypes = Array.isArray(rawResourceTypes)
+			? rawResourceTypes.length > 0
+			: rawResourceTypes !== undefined;
+
+		return {
+			action: 'block',
+			...(rule.url !== undefined && rule.url !== '' ? { url: rule.url } : {}),
+			...(hasResourceTypes ? { resource_types: rawResourceTypes } : {}),
+		};
+	});
+}
+
 export function mapClientOptions(options: IDataObject): ClientOptions {
 	validateDimensions(options);
 	const mapped: ClientOptions = {};
@@ -118,6 +145,11 @@ export function mapClientOptions(options: IDataObject): ClientOptions {
 		if (apiName === 'headers') {
 			const headers = mapHeaders(value);
 			if (headers) mapped[apiName] = headers;
+			continue;
+		}
+		if (apiName === 'request_overrides') {
+			const requestOverrides = mapRequestOverrides(value);
+			if (requestOverrides) mapped[apiName] = requestOverrides;
 			continue;
 		}
 		mapped[apiName] = value;
@@ -190,8 +222,11 @@ export function makeHtmlRequest(
 	html: string,
 	options: IDataObject,
 	pdfOptions: IDataObject,
+	requestOverrides?: unknown,
 ): CreateHtmlCssImageRequest {
 	const mapped = mapClientOptions(options);
+	const mappedRequestOverrides = mapRequestOverrides(requestOverrides);
+	if (mappedRequestOverrides) mapped.request_overrides = mappedRequestOverrides;
 	return new CreateHtmlCssImageRequest({
 		...mapped,
 		html,
@@ -203,8 +238,11 @@ export function makeUrlRequest(
 	url: string,
 	options: IDataObject,
 	pdfOptions: IDataObject,
+	requestOverrides?: unknown,
 ): CreateUrlImageRequest {
 	const mapped = mapClientOptions(options);
+	const mappedRequestOverrides = mapRequestOverrides(requestOverrides);
+	if (mappedRequestOverrides) mapped.request_overrides = mappedRequestOverrides;
 	return new CreateUrlImageRequest({
 		...mapped,
 		url,

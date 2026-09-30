@@ -2,6 +2,7 @@ import type {
 	IDataObject,
 	IExecuteFunctions,
 	INodeExecutionData,
+	INodeProperties,
 	INodeType,
 	INodeTypeDescription,
 } from 'n8n-workflow';
@@ -11,7 +12,11 @@ import {
 	HtmlCssToImageClient,
 	type CreateTemplatedImageRequest,
 } from './htmlCssToImageClient.bundle.js';
-import { htmlClientOptions, urlClientOptions } from './generatedProperties';
+import {
+	htmlClientOptions,
+	requestOverrideResourceOptions,
+	urlClientOptions,
+} from './generatedProperties';
 import {
 	addBinaryOutput,
 	assertDeleteSuccess,
@@ -61,6 +66,43 @@ const requestHeadersProperty = {
 					type: 'string' as const,
 					default: '',
 					typeOptions: { password: true },
+				},
+			],
+		},
+	],
+};
+
+const requestOverridesProperty: INodeProperties = {
+	displayName: 'Request Overrides',
+	name: 'requestOverrides',
+	type: 'fixedCollection',
+	typeOptions: {
+		multipleValues: true,
+	},
+	placeholder: 'Add Block Rule',
+	default: {},
+	description: 'Block matching browser network requests while rendering; requires a paid plan',
+	options: [
+		{
+			displayName: 'Block Rule',
+			name: 'rule',
+			values: [
+				{
+					displayName: 'URL Pattern',
+					name: 'url',
+					type: 'string',
+					default: '',
+					placeholder: '*://analytics.example.com/*',
+					description:
+						'Case-sensitive full URL pattern; use * to match any sequence of characters',
+				},
+				{
+					displayName: 'Resource Types',
+					name: 'resourceTypes',
+					type: 'multiOptions',
+					default: [],
+					options: requestOverrideResourceOptions,
+					description: 'Browser resource types to block',
 				},
 			],
 		},
@@ -355,6 +397,10 @@ export class HtmlCssToImage implements INodeType {
 				options: pdfOptions,
 			},
 			{
+				...requestOverridesProperty,
+				displayOptions: { show: { operation: ['createHtml', 'createUrl'] } },
+			},
+			{
 				displayName: 'Signed URL Type',
 				name: 'signedUrlType',
 				type: 'options',
@@ -506,6 +552,7 @@ export class HtmlCssToImage implements INodeType {
 							this.getNodeParameter('html', itemIndex) as string,
 							this.getNodeParameter('options', itemIndex, {}) as IDataObject,
 							this.getNodeParameter('pdfOptions', itemIndex, {}) as IDataObject,
+							this.getNodeParameter('requestOverrides', itemIndex, {}),
 						),
 					);
 				} else if (operation === 'createUrl') {
@@ -514,6 +561,7 @@ export class HtmlCssToImage implements INodeType {
 							this.getNodeParameter('url', itemIndex) as string,
 							this.getNodeParameter('options', itemIndex, {}) as IDataObject,
 							this.getNodeParameter('pdfOptions', itemIndex, {}) as IDataObject,
+							this.getNodeParameter('requestOverrides', itemIndex, {}),
 						),
 					);
 				} else {

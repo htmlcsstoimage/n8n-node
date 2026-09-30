@@ -25,6 +25,7 @@ const sourceFiles = sourcePaths.map((sourcePath) => {
 
 const aliases = new Map();
 const classes = new Map();
+const enums = new Map();
 
 for (const sourceFile of sourceFiles) {
 	for (const statement of sourceFile.statements) {
@@ -33,6 +34,9 @@ for (const sourceFile of sourceFiles) {
 		}
 		if (ts.isClassDeclaration(statement) && statement.name) {
 			classes.set(statement.name.text, { declaration: statement, sourceFile });
+		}
+		if (ts.isEnumDeclaration(statement)) {
+			enums.set(statement.name.text, { declaration: statement, sourceFile });
 		}
 	}
 }
@@ -64,6 +68,18 @@ function getProperties(className) {
 		}));
 }
 
+function getStringEnumValues(enumName) {
+	const entry = enums.get(enumName);
+	if (!entry) throw new Error(`Could not find client enum ${enumName}`);
+
+	return entry.declaration.members.map((member) => {
+		if (!member.initializer || !ts.isStringLiteral(member.initializer)) {
+			throw new Error(`Client enum ${enumName} must contain only string values`);
+		}
+		return member.initializer.text;
+	});
+}
+
 function toCamelCase(value) {
 	return value.replace(/_([a-z])/g, (_, character) => character.toUpperCase());
 }
@@ -79,6 +95,7 @@ const initialisms = new Map([
 	['png', 'PNG'],
 	['url', 'URL'],
 	['webp', 'WebP'],
+	['xhr', 'XHR'],
 ]);
 
 const displayNameOverrides = new Map([
@@ -215,6 +232,7 @@ const optionOrder = [
 	'max_wait_ms',
 	'render_when_ready',
 	'block_consent_banners',
+	'request_overrides',
 	'color_scheme',
 	'timezone',
 	'media_type',
@@ -250,6 +268,11 @@ function sortProperties(properties) {
 const apiNameByParameter = Object.fromEntries(
 	generatedProperties.map((property) => [toCamelCase(property.apiName), property.apiName]),
 );
+const requestOverrideResourceValues = getStringEnumValues('RequestOverrideResourceType');
+const requestOverrideResourceOptions = requestOverrideResourceValues.map((value) => ({
+	name: toDisplayName(value),
+	value,
+}));
 
 function serializeProperties(properties) {
 	return properties.map(toN8nProperty).filter(Boolean);
@@ -261,9 +284,13 @@ const banner = `/*
  */`;
 
 const contents = `${banner}
-import type { INodeProperties } from 'n8n-workflow';
+import type { INodeProperties, INodePropertyOptions } from 'n8n-workflow';
 
 export const apiNameByParameter = ${JSON.stringify(apiNameByParameter, null, 2)} as const;
+
+export const requestOverrideResourceValues = ${JSON.stringify(requestOverrideResourceValues, null, 2)} as const;
+
+export const requestOverrideResourceOptions: INodePropertyOptions[] = ${JSON.stringify(requestOverrideResourceOptions, null, 2)};
 
 export const htmlClientOptions: INodeProperties[] = ${JSON.stringify(
 	serializeProperties(sortProperties([...html, ...shared])),

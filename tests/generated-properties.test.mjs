@@ -189,6 +189,67 @@ test('custom headers and origins map to client request values', () => {
 	assert.equal(request.identify_as_hcti, true);
 });
 
+test('request overrides use a separate repeatable typed editor only for create operations', () => {
+	const nodeSource = fs.readFileSync(
+		path.join(root, 'nodes/HtmlCssToImage/HtmlCssToImage.node.ts'),
+		'utf8',
+	);
+	const generatedSource = fs.readFileSync(generatedPath, 'utf8');
+	assert.match(
+		nodeSource,
+		/name:\s*'requestOverrides'[\s\S]*?type:\s*'fixedCollection'[\s\S]*?multipleValues:\s*true/,
+	);
+	assert.match(nodeSource, /name:\s*'resourceTypes'[\s\S]*?type:\s*'multiOptions'/);
+	assert.match(nodeSource, /name:\s*'url'[\s\S]*?placeholder:\s*'\*:\/\/analytics\.example\.com\/\*'/);
+	assert.match(
+		nodeSource,
+		/\.\.\.requestOverridesProperty[\s\S]*?operation:\s*\['createHtml', 'createUrl'\]/,
+	);
+	for (const resourceType of ['beacon', 'image_set', 'script', 'xhr', 'other']) {
+		assert.match(generatedSource, new RegExp(`"value": "${resourceType}"`));
+	}
+});
+
+test('request override controls map to client block rules', () => {
+	const require = createRequire(import.meta.url);
+	const helpersPath = path.join(root, 'dist/nodes/HtmlCssToImage/helpers.js');
+	delete require.cache[helpersPath];
+	const { makeUrlRequest } = require(helpersPath);
+
+	const request = makeUrlRequest(
+		'https://example.com',
+		{},
+		{},
+		{
+			rule: [
+				{
+					url: ' *://analytics.example.com/* ',
+					resourceTypes: ['script', 'fetch'],
+				},
+				{ resourceTypes: ['beacon'] },
+			],
+		},
+	);
+
+	assert.deepEqual(request.request_overrides, [
+		{
+			action: 'block',
+			url: ' *://analytics.example.com/* ',
+			resource_types: ['script', 'fetch'],
+		},
+		{ action: 'block', resource_types: ['beacon'] },
+	]);
+	assert.deepEqual(
+		makeUrlRequest(
+			'https://example.com',
+			{},
+			{},
+			{ rule: [{ url: '', resourceTypes: [] }] },
+		).request_overrides,
+		[{ action: 'block' }],
+	);
+});
+
 test('zero and false client option values are preserved', () => {
 	const require = createRequire(import.meta.url);
 	const helpersPath = path.join(root, 'dist/nodes/HtmlCssToImage/helpers.js');
@@ -455,7 +516,8 @@ test('bundled client creates requests without a runtime package dependency', asy
 		'dist/nodes/HtmlCssToImage/htmlCssToImageClient.bundle.js',
 	);
 	delete require.cache[bundlePath];
-	const { CreateHtmlCssImageRequest, HtmlCssToImageClient } = require(bundlePath);
+	const { CreateHtmlCssImageRequest, CreateUrlImageRequest, HtmlCssToImageClient } =
+		require(bundlePath);
 	const previousFetch = globalThis.fetch;
 	let requestBody;
 
@@ -473,12 +535,24 @@ test('bundled client creates requests without a runtime package dependency', asy
 			new CreateHtmlCssImageRequest({
 				html: '<h1>Hello</h1>',
 				viewport_width: 1200,
+				request_overrides: [{ action: 'block', resource_types: ['script'] }],
 			}),
 		);
 		assert.equal(result.success, true);
 		assert.equal(requestBody.html, '<h1>Hello</h1>');
 		assert.equal(requestBody.viewport_width, 1200);
+		assert.deepEqual(requestBody.request_overrides, [
+			{ action: 'block', resource_types: ['script'] },
+		]);
 		assert.equal(requestBody.__type, undefined);
+
+		const signedUrl = client.generateCreateAndRenderUrl(
+			new CreateUrlImageRequest({
+				url: 'https://example.com',
+				request_overrides: [{ action: 'block', resource_types: ['script'] }],
+			}),
+		);
+		assert.equal(new URL(signedUrl).searchParams.has('request_overrides'), false);
 	} finally {
 		globalThis.fetch = previousFetch;
 	}

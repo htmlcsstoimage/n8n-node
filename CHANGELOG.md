@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+- Update the bundled TypeScript client to v0.10.0
+- Add typed request override block rules for HTML/CSS images and URL screenshots
+- Clarify the `disable_twemoji` option behavior from the client documentation
+
 ## 0.2.0
 
 - Fix the n8n codex node identifier and remove an unsupported category
