@@ -15,15 +15,58 @@ export type CreateImageResponse = CreateImageSuccessResponse | CreateImageErrorR
 
 export type DeleteImageResponse = { success: true } | CreateImageErrorResponse;
 
+export type CreateRecordingSuccessResponse = {
+	success: true;
+	id: string;
+	status_url: string;
+	recording_url: string;
+};
+
+export type RecordingStatusSuccessResponse = {
+	success: true;
+	id: string;
+	recording_url: string;
+	status:
+		| 'processing'
+		| 'pending_retry'
+		| 'ready'
+		| 'failed'
+		| 'cancelled'
+		| 'awaiting_render'
+		| 'unknown';
+	status_entered_at: string;
+	attempt_count: number;
+	stored_duration_ms?: number | null;
+	storage_destination_hcti_storage_disabled?: boolean | null;
+	error?: {
+		code: string;
+		message: string;
+		occurred_at: string;
+		retryable: boolean;
+		action_path?: string | null;
+	} | null;
+};
+
+export type CreateRecordingResponse = CreateRecordingSuccessResponse | CreateImageErrorResponse;
+export type RecordingStatusResponse = RecordingStatusSuccessResponse | CreateImageErrorResponse;
+
+export class CreateHtmlCssRecordingRequest {
+	readonly __type: 'html_css';
+	constructor(init?: Record<string, unknown>);
+}
+
+export class CreateUrlRecordingRequest {
+	readonly __type: 'url';
+	constructor(init?: Record<string, unknown>);
+}
+
 export type RenderImageFormat = 'png' | 'jpg' | 'webp' | 'pdf';
 
 export type CreateImageBatchResponse =
 	| { success: true; images: CreateImageSuccessResponse[] }
 	| CreateImageErrorResponse;
 
-export type PdfValueInput =
-	| number
-	| { value: number; unit: 'px' | 'in' | 'cm' | 'mm' };
+export type PdfValueInput = number | { value: number; unit: 'px' | 'in' | 'cm' | 'mm' };
 
 export class PDFOptions {
 	constructor(init?: {
@@ -60,11 +103,13 @@ export type CreateTemplatedImageRequest = {
 
 export class HtmlCssToImageClient {
 	constructor(apiId: string, apiKey: string);
+	createRecording(
+		request: CreateHtmlCssRecordingRequest | CreateUrlRecordingRequest,
+	): Promise<CreateRecordingResponse>;
+	fetchRecordingStatus(recordingId: string): Promise<RecordingStatusResponse>;
+	deleteRecording(recordingId: string): Promise<DeleteImageResponse>;
 	createImage(
-		request:
-			| CreateHtmlCssImageRequest
-			| CreateUrlImageRequest
-			| CreateTemplatedImageRequest,
+		request: CreateHtmlCssImageRequest | CreateUrlImageRequest | CreateTemplatedImageRequest,
 	): Promise<CreateImageResponse>;
 	deleteImage(imageId: string): Promise<DeleteImageResponse>;
 	deleteImageBatch(imageIds: readonly string[]): Promise<DeleteImageResponse>;

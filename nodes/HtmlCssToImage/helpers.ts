@@ -3,15 +3,25 @@ import { NodeOperationError } from 'n8n-workflow';
 
 import {
 	CreateHtmlCssImageRequest,
+	CreateHtmlCssRecordingRequest,
 	CreateUrlImageRequest,
+	CreateUrlRecordingRequest,
 	PDFOptions,
 } from './htmlCssToImageClient.bundle.js';
 import type {
-	CreateImageResponse,
+	CreateImageErrorResponse,
 	CreateImageSuccessResponse,
+	CreateRecordingSuccessResponse,
 	DeleteImageResponse,
 } from './htmlCssToImageClient.bundle.js';
-import { apiNameByParameter } from './generatedProperties';
+import {
+	apiNameByParameter,
+	recordingFields,
+	recordingComplexFields,
+	recordingActionModels,
+	recordingTriggerModels,
+	scrollTargetModels,
+} from './generatedProperties';
 
 type ClientOptions = Record<string, unknown>;
 type PdfUnit = 'px' | 'in' | 'cm' | 'mm';
@@ -54,6 +64,13 @@ function validateDimensions(options: Record<string, unknown>): void {
 }
 
 function mapStringArray(value: unknown): string[] | undefined {
+	if (Array.isArray(value)) {
+		const values = value
+			.filter((entry): entry is string => typeof entry === 'string')
+			.map((entry) => entry.trim())
+			.filter(Boolean);
+		return values.length ? values : undefined;
+	}
 	if (typeof value === 'string') {
 		const values = value
 			.split(',')
@@ -105,9 +122,7 @@ function mapHeaders(value: unknown): Record<string, string> | undefined {
 function mapRequestOverrides(value: unknown): unknown[] | undefined {
 	if (!value || typeof value !== 'object') return undefined;
 
-	const entries = Array.isArray(value)
-		? value
-		: (value as { rule?: unknown }).rule;
+	const entries = Array.isArray(value) ? value : (value as { rule?: unknown }).rule;
 	if (!Array.isArray(entries) || entries.length === 0) return undefined;
 
 	return entries.map((entry) => {
@@ -194,10 +209,7 @@ export function buildPdfOptions(options: IDataObject): PDFOptions | undefined {
 	const left = parsePdfValue(options.marginLeft);
 	const hasMargins = [top, right, bottom, left].some((value) => value !== undefined);
 
-	if (
-		hasMargins &&
-		[top, right, bottom, left].some((value) => value === undefined)
-	) {
+	if (hasMargins && [top, right, bottom, left].some((value) => value === undefined)) {
 		throw new Error('Set all four PDF margins when using custom margins');
 	}
 
@@ -250,6 +262,102 @@ export function makeUrlRequest(
 	});
 }
 
+function asObject(value: unknown): IDataObject {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+		throw new Error('Recording settings must be an object');
+	}
+	return value as IDataObject;
+}
+
+function mapRecordingModel(value: unknown, model: string): ClientOptions {
+	const object = asObject(value);
+	const scalarFields: IDataObject = {};
+	for (const field of recordingFields[model]) {
+		const apiName = apiNameByParameter[field.name as keyof typeof apiNameByParameter] ?? field.name;
+		scalarFields[field.name] = object[field.name] ?? object[apiName];
+	}
+	const mapped = mapClientOptions(scalarFields);
+	for (const apiName of recordingComplexFields[model]) {
+		const parameterName = apiName.replace(/_([a-z])/g, (_, character: string) =>
+			character.toUpperCase(),
+		);
+		const nested = object[parameterName] ?? object[apiName];
+		if (nested === undefined || nested === null) continue;
+		if (apiName === 'to') {
+			const target = asObject(nested);
+			mapped.to = mapRecordingVariant(target.target ?? target, scrollTargetModels);
+		} else if (apiName === 'steps') {
+			const steps = Array.isArray(nested) ? nested : asObject(nested).step;
+			if (Array.isArray(steps))
+				mapped.steps = steps.map((step) => mapRecordingModel(step, 'ScrollStep'));
+		} else {
+			const actions = mapRecordingActions(nested);
+			if (actions !== undefined) mapped[apiName] = actions;
+		}
+	}
+	if (
+		typeof mapped.scroll_distance === 'string' &&
+		/^-?\d+(?:\.\d+)?$/.test(mapped.scroll_distance)
+	) {
+		mapped.scroll_distance = Number(mapped.scroll_distance);
+	}
+	if (
+		object.type === 'execute_javascript' &&
+		object.ignoreScriptErrors === true &&
+		mapped.if_error === undefined
+	) {
+		mapped.if_error = [];
+	}
+	return mapped;
+}
+
+function mapRecordingVariant(value: unknown, models: Record<string, string>): ClientOptions {
+	const object = asObject(value);
+	const model = typeof object.type === 'string' ? models[object.type] : undefined;
+	if (!model) throw new Error('Select a recording action, trigger, or scroll target type');
+	return mapRecordingModel(object, model);
+}
+
+export function mapRecordingActions(value: unknown): ClientOptions[] | undefined {
+	if (value === undefined || value === null) return undefined;
+	const entries = Array.isArray(value) ? value : asObject(value).action;
+	if (entries === undefined) return undefined;
+	if (!Array.isArray(entries)) throw new Error('Recording actions must be an array');
+	// An empty native editor means no override. An explicit API [] can opt out of script errors.
+	if (!Array.isArray(value) && entries.length === 0) return undefined;
+	return entries.map((entry) => mapRecordingVariant(entry, recordingActionModels));
+}
+
+export function makeRecordingRequest(
+	type: 'html' | 'url',
+	source: string,
+	duration: number,
+	options: IDataObject,
+	output: IDataObject,
+	trigger: IDataObject,
+	actions: unknown,
+	requestOverrides?: unknown,
+): CreateHtmlCssRecordingRequest | CreateUrlRecordingRequest {
+	const mapped = mapClientOptions(options);
+	const mappedOutput = mapRecordingModel(output, 'RecordingOutputOptions');
+	const mappedTrigger = trigger.trigger ?? (trigger.type ? trigger : undefined);
+	const mappedActions = mapRecordingActions(actions);
+	const overrides = mapRequestOverrides(requestOverrides);
+	const request = {
+		...mapped,
+		duration_ms: duration,
+		...(Object.keys(mappedOutput).length ? { output: mappedOutput } : {}),
+		...(mappedTrigger
+			? { trigger: mapRecordingVariant(mappedTrigger, recordingTriggerModels) }
+			: {}),
+		...(mappedActions !== undefined ? { actions: mappedActions } : {}),
+		...(overrides ? { request_overrides: overrides } : {}),
+	};
+	return type === 'html'
+		? new CreateHtmlCssRecordingRequest({ ...request, html: source })
+		: new CreateUrlRecordingRequest({ ...request, url: source });
+}
+
 export function parseTemplateValues(value: unknown): IDataObject {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) {
 		throw new Error('Template Values must be an object');
@@ -271,11 +379,11 @@ export function parseTemplateValues(value: unknown): IDataObject {
 	return templateValues;
 }
 
-export function assertSuccess(
+export function assertSuccess<T extends { success: true }>(
 	executeFunctions: IExecuteFunctions,
-	result: CreateImageResponse,
+	result: T | CreateImageErrorResponse,
 	itemIndex: number,
-): asserts result is CreateImageSuccessResponse {
+): asserts result is T {
 	if (result.success) return;
 	const validation = result.validation_errors
 		?.map((error) => `${error.path}: ${error.message}`)
@@ -291,14 +399,7 @@ export function assertDeleteSuccess(
 	result: DeleteImageResponse,
 	itemIndex: number,
 ): asserts result is { success: true } {
-	if (result.success) return;
-	const validation = result.validation_errors
-		?.map((error) => `${error.path}: ${error.message}`)
-		.join('; ');
-	throw new NodeOperationError(executeFunctions.getNode(), result.message ?? result.error, {
-		itemIndex,
-		description: validation ?? result.error,
-	});
+	assertSuccess(executeFunctions, result, itemIndex);
 }
 
 const formats = {
@@ -328,6 +429,32 @@ export async function addBinaryOutput(
 			Buffer.from(await response.arrayBuffer()),
 			`${image.id}.${file.extension}`,
 			file.mimeType,
+		),
+	};
+}
+
+export async function addRecordingBinaryOutput(
+	executeFunctions: IExecuteFunctions,
+	item: INodeExecutionData,
+	recording: CreateRecordingSuccessResponse,
+	binaryPropertyName: string,
+): Promise<void> {
+	const mediaTypes: Record<string, string> = {
+		mp4: 'video/mp4',
+		webm: 'video/webm',
+		gif: 'image/gif',
+	};
+	const extension = new URL(recording.recording_url).pathname.split('.').pop() ?? '';
+	const mimeType = mediaTypes[extension];
+	if (!mimeType) throw new Error('Recording URL must identify an MP4, WebM, or GIF file');
+	const response = await fetch(recording.recording_url);
+	if (!response.ok) throw new Error(`Could not download generated ${extension.toUpperCase()} file`);
+	item.binary = {
+		...(item.binary ?? {}),
+		[binaryPropertyName]: await executeFunctions.helpers.prepareBinaryData(
+			Buffer.from(await response.arrayBuffer()),
+			`${recording.id}.${extension}`,
+			mimeType,
 		),
 	};
 }

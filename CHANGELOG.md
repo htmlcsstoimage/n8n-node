@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.1
+
+- Update the bundled TypeScript client to v1.0.1
+- Add a Recording resource with HTML/CSS and URL recording creation, status fetching, and deletion
+- Add native recording options, media settings, triggers, ordered actions, scroll destinations, and branches
+- Support binary MP4, WebM, and GIF recording output
+- Preserve existing image operation IDs, defaults, and node version
+
 ## 0.2.1
 
 - Update the bundled TypeScript client to v0.10.0

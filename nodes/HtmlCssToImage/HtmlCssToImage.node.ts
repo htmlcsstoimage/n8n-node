@@ -14,14 +14,23 @@ import {
 } from './htmlCssToImageClient.bundle.js';
 import {
 	htmlClientOptions,
+	htmlRecordingClientOptions,
+	recordingActionModels,
+	recordingDurationProperty,
+	recordingFields,
+	recordingTriggerModels,
 	requestOverrideResourceOptions,
+	scrollTargetModels,
 	urlClientOptions,
+	urlRecordingClientOptions,
 } from './generatedProperties';
 import {
 	addBinaryOutput,
+	addRecordingBinaryOutput,
 	assertDeleteSuccess,
 	assertSuccess,
 	makeHtmlRequest,
+	makeRecordingRequest,
 	makeUrlRequest,
 	parseTemplateValues,
 } from './helpers';
@@ -33,10 +42,7 @@ const renderFormatOptions = [
 	{ name: 'PDF', value: 'pdf' },
 ];
 
-const optionalRenderFormatOptions = [
-	{ name: 'API Default', value: '' },
-	...renderFormatOptions,
-];
+const optionalRenderFormatOptions = [{ name: 'API Default', value: '' }, ...renderFormatOptions];
 
 const requestHeadersProperty = {
 	displayName: 'Headers',
@@ -93,8 +99,7 @@ const requestOverridesProperty: INodeProperties = {
 					type: 'string',
 					default: '',
 					placeholder: '*://analytics.example.com/*',
-					description:
-						'Case-sensitive full URL pattern; use * to match any sequence of characters',
+					description: 'Case-sensitive full URL pattern; use * to match any sequence of characters',
 				},
 				{
 					displayName: 'Resource Types',
@@ -227,6 +232,251 @@ const outputProperties = [
 	},
 ];
 
+const recordingCreateOperations = ['createHtmlRecording', 'createUrlRecording'];
+
+function recordingVariantFields(
+	models: Record<string, string>,
+	defaultType: string,
+): INodeProperties[] {
+	const fields = new Map<string, INodeProperties>();
+	const types = [];
+	for (const [type, model] of Object.entries(models)) {
+		for (const field of recordingFields[model]) {
+			if (field.name === 'type') {
+				types.push(...(field.options ?? []));
+				continue;
+			}
+			// Identical definitions share one field; differing ones (e.g. descriptions) get a
+			// same-named field per type so each action shows its own help text.
+			const key = JSON.stringify(field);
+			const existing = fields.get(key);
+			fields.set(key, {
+				...field,
+				displayOptions: { show: { type: [...(existing?.displayOptions?.show?.type ?? []), type] } },
+				...(field.name === 'script' ? { typeOptions: { rows: 5 } } : {}),
+			});
+		}
+	}
+	return [
+		{
+			displayName: 'Type',
+			name: 'type',
+			type: 'options',
+			default: defaultType,
+			options: types.sort((left, right) =>
+				('name' in left ? left.name : '').localeCompare('name' in right ? right.name : ''),
+			),
+		},
+		...fields.values(),
+	];
+}
+
+function recordingActionsProperty(name: string, displayName: string, depth = 2): INodeProperties {
+	const fields = recordingVariantFields(recordingActionModels, 'simple_scroll');
+	const targetFields = recordingVariantFields(scrollTargetModels, 'position');
+	if (depth > 0) {
+		for (const [branchName, branchDisplayName, types] of [
+			['ifFound', 'If Found', ['locate_selector']],
+			['ifNotFound', 'If Not Found', ['click', 'locate_selector', 'scroll']],
+			['ifError', 'If Error', ['execute_javascript']],
+		] as const) {
+			fields.push({
+				...recordingActionsProperty(branchName, branchDisplayName, depth - 1),
+				displayOptions: { show: { type: [...types] } },
+			});
+		}
+		targetFields.push({
+			...recordingActionsProperty('ifNotFound', 'If Not Found', depth - 1),
+			displayOptions: { show: { type: ['selector'] } },
+		});
+	}
+	fields.push(
+		{
+			displayName: 'Ignore Script Errors',
+			name: 'ignoreScriptErrors',
+			type: 'boolean',
+			default: false,
+			description: 'Whether to continue after a script error when no fallback actions are supplied',
+			displayOptions: { show: { type: ['execute_javascript'] } },
+		},
+		{
+			displayName: 'Steps',
+			name: 'steps',
+			type: 'fixedCollection',
+			default: {},
+			required: true,
+			typeOptions: { multipleValues: true },
+			placeholder: 'Add Step',
+			displayOptions: { show: { type: ['scroll'] } },
+			options: [
+				{
+					name: 'step',
+					displayName: 'Step',
+					values: [
+						...recordingFields.ScrollStep,
+						{
+							displayName: 'Destination',
+							name: 'to',
+							type: 'fixedCollection',
+							default: {},
+							required: true,
+							options: [{ name: 'target', displayName: 'Target', values: targetFields }],
+						},
+					],
+				},
+			],
+		},
+	);
+	return {
+		displayName,
+		name,
+		type: 'fixedCollection',
+		default: {},
+		typeOptions: { multipleValues: true, sortable: true },
+		placeholder: 'Add Action',
+		description:
+			'Ordered recording interactions. Expressions may supply an API action array, including deeper branches.',
+		options: [{ name: 'action', displayName: 'Action', values: fields }],
+	};
+}
+
+const recordingOriginsIndex = urlRecordingClientOptions.findIndex(
+	(property) => property.name === 'additionalHeaderOrigins',
+);
+const recordingUrlOptions = [
+	...urlRecordingClientOptions.slice(0, recordingOriginsIndex),
+	requestHeadersProperty,
+	...urlRecordingClientOptions.slice(recordingOriginsIndex),
+];
+
+const recordingProperties: INodeProperties[] = [
+	{
+		displayName: 'Operation',
+		name: 'operation',
+		type: 'options',
+		noDataExpression: true,
+		displayOptions: { show: { resource: ['recording'] } },
+		options: [
+			{
+				name: 'Create From HTML/CSS',
+				value: 'createHtmlRecording',
+				action: 'Create a recording from HTML and CSS',
+				description: 'Record HTML and CSS as MP4, WebM, or GIF',
+			},
+			{
+				name: 'Create From URL',
+				value: 'createUrlRecording',
+				action: 'Create a recording from a URL',
+				description: 'Record a webpage as MP4, WebM, or GIF',
+			},
+			{
+				name: 'Delete',
+				value: 'deleteRecording',
+				action: 'Delete a recording',
+				description: 'Permanently delete a recording by ID',
+			},
+			{
+				name: 'Fetch Status',
+				value: 'fetchRecordingStatus',
+				action: 'Fetch recording status',
+				description: 'Check the current status once, including retries and failure details',
+			},
+		],
+		default: 'createHtmlRecording',
+	},
+	{
+		displayName: 'Recording ID',
+		name: 'recordingId',
+		type: 'string',
+		default: '',
+		required: true,
+		displayOptions: { show: { operation: ['deleteRecording', 'fetchRecordingStatus'] } },
+	},
+	{
+		displayName: 'HTML',
+		name: 'recordingHtml',
+		type: 'string',
+		default: '',
+		required: true,
+		typeOptions: { editor: 'htmlEditor' },
+		displayOptions: { show: { operation: ['createHtmlRecording'] } },
+		description: 'HTML document or fragment to record',
+	},
+	{
+		displayName: 'URL',
+		name: 'recordingUrl',
+		type: 'string',
+		default: '',
+		required: true,
+		placeholder: 'https://example.com',
+		displayOptions: { show: { operation: ['createUrlRecording'] } },
+	},
+	{
+		...recordingDurationProperty,
+		displayOptions: { show: { operation: recordingCreateOperations } },
+	},
+	{
+		displayName: 'Options',
+		name: 'recordingOptions',
+		type: 'collection',
+		default: {},
+		placeholder: 'Add Option',
+		options: htmlRecordingClientOptions,
+		displayOptions: { show: { operation: ['createHtmlRecording'] } },
+	},
+	{
+		displayName: 'Options',
+		name: 'recordingOptions',
+		type: 'collection',
+		default: {},
+		placeholder: 'Add Option',
+		options: recordingUrlOptions,
+		displayOptions: { show: { operation: ['createUrlRecording'] } },
+	},
+	{
+		displayName: 'Media Options',
+		name: 'recordingMediaOptions',
+		type: 'collection',
+		default: {},
+		placeholder: 'Add Media Option',
+		options: recordingFields.RecordingOutputOptions,
+		displayOptions: { show: { operation: recordingCreateOperations } },
+	},
+	{
+		displayName: 'Trigger',
+		name: 'recordingTrigger',
+		type: 'fixedCollection',
+		default: {},
+		placeholder: 'Add Trigger',
+		options: [
+			{
+				name: 'trigger',
+				displayName: 'Trigger',
+				values: recordingVariantFields(recordingTriggerModels, 'immediate'),
+			},
+		],
+		description:
+			'When capture and actions start after page preparation. Leave empty to start immediately.',
+		displayOptions: { show: { operation: recordingCreateOperations } },
+	},
+	{
+		...recordingActionsProperty('recordingActions', 'Actions'),
+		displayOptions: { show: { operation: recordingCreateOperations } },
+	},
+	{
+		...requestOverridesProperty,
+		displayOptions: { show: { operation: recordingCreateOperations } },
+	},
+	...outputProperties
+		.filter((property) => property.name !== 'format')
+		.map((property) => ({
+			...property,
+			displayOptions: {
+				show: { ...property.displayOptions?.show, operation: recordingCreateOperations },
+			},
+		})),
+];
+
 export class HtmlCssToImage implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'HTML/CSS to Image API',
@@ -238,7 +488,7 @@ export class HtmlCssToImage implements INodeType {
 		group: ['output'],
 		version: 1,
 		subtitle: '={{$parameter["operation"]}}',
-		description: 'Generate images, screenshots, PDFs, and signed URLs',
+		description: 'Generate images, screenshots, PDFs, recordings, and signed URLs',
 		defaults: {
 			name: 'HTML/CSS to Image API',
 		},
@@ -257,7 +507,10 @@ export class HtmlCssToImage implements INodeType {
 				name: 'resource',
 				type: 'options',
 				noDataExpression: true,
-				options: [{ name: 'Image', value: 'image' }],
+				options: [
+					{ name: 'Image', value: 'image' },
+					{ name: 'Recording', value: 'recording' },
+				],
 				default: 'image',
 			},
 			{
@@ -265,6 +518,7 @@ export class HtmlCssToImage implements INodeType {
 				name: 'operation',
 				type: 'options',
 				noDataExpression: true,
+				displayOptions: { show: { resource: ['image'] } },
 				options: [
 					{
 						name: 'Create From HTML/CSS',
@@ -299,6 +553,7 @@ export class HtmlCssToImage implements INodeType {
 				],
 				default: 'createHtml',
 			},
+			...recordingProperties,
 			{
 				displayName: 'Image ID',
 				name: 'imageId',
@@ -504,6 +759,51 @@ export class HtmlCssToImage implements INodeType {
 			try {
 				const operation = this.getNodeParameter('operation', itemIndex) as string;
 
+				if (operation === 'deleteRecording' || operation === 'fetchRecordingStatus') {
+					const id = this.getNodeParameter('recordingId', itemIndex) as string;
+					const result =
+						operation === 'deleteRecording'
+							? await client.deleteRecording(id)
+							: await client.fetchRecordingStatus(id);
+					assertSuccess(this, result, itemIndex);
+					returnData.push({
+						json: result as unknown as IDataObject,
+						pairedItem: { item: itemIndex },
+					});
+					continue;
+				}
+
+				if (recordingCreateOperations.includes(operation)) {
+					const isHtml = operation === 'createHtmlRecording';
+					const request = makeRecordingRequest(
+						isHtml ? 'html' : 'url',
+						this.getNodeParameter(isHtml ? 'recordingHtml' : 'recordingUrl', itemIndex) as string,
+						this.getNodeParameter('durationMs', itemIndex) as number,
+						this.getNodeParameter('recordingOptions', itemIndex, {}) as IDataObject,
+						this.getNodeParameter('recordingMediaOptions', itemIndex, {}) as IDataObject,
+						this.getNodeParameter('recordingTrigger', itemIndex, {}) as IDataObject,
+						this.getNodeParameter('recordingActions', itemIndex, {}),
+						this.getNodeParameter('requestOverrides', itemIndex, {}),
+					);
+					const result = await client.createRecording(request);
+					assertSuccess(this, result, itemIndex);
+					const output = this.getNodeParameter('output', itemIndex, 'metadata') as string;
+					const outputItem: INodeExecutionData = {
+						json: output === 'binary' ? {} : (result as unknown as IDataObject),
+						pairedItem: { item: itemIndex },
+					};
+					if (output !== 'metadata') {
+						await addRecordingBinaryOutput(
+							this,
+							outputItem,
+							result,
+							this.getNodeParameter('binaryPropertyName', itemIndex, 'data') as string,
+						);
+					}
+					returnData.push(outputItem);
+					continue;
+				}
+
 				if (operation === 'deleteImage') {
 					const result = await client.deleteImage(
 						this.getNodeParameter('imageId', itemIndex) as string,
@@ -522,9 +822,7 @@ export class HtmlCssToImage implements INodeType {
 						type === 'template'
 							? client.generateTemplatedImageUrl(
 									this.getNodeParameter('signedTemplateId', itemIndex) as string,
-									parseTemplateValues(
-										this.getNodeParameter('signedTemplateValues', itemIndex),
-									),
+									parseTemplateValues(this.getNodeParameter('signedTemplateValues', itemIndex)),
 									(this.getNodeParameter('signedTemplateVersion', itemIndex, 0) as number) ||
 										undefined,
 									(this.getNodeParameter('signedTemplateFormat', itemIndex, '') as

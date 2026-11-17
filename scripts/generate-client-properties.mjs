@@ -5,7 +5,9 @@ import ts from 'typescript';
 const root = process.cwd();
 const clientRoot = path.join(root, 'vendor/html-css-to-image-client/src');
 const outputPath = path.join(root, 'nodes/HtmlCssToImage/generatedProperties.ts');
-const sourcePaths = [path.join(clientRoot, 'types/request.ts')];
+const sourcePaths = ['request', 'recording'].map((name) =>
+	path.join(clientRoot, `types/${name}.ts`),
+);
 
 const sourceFiles = sourcePaths.map((sourcePath) => {
 	if (!fs.existsSync(sourcePath)) {
@@ -32,7 +34,10 @@ for (const sourceFile of sourceFiles) {
 		if (ts.isTypeAliasDeclaration(statement)) {
 			aliases.set(statement.name.text, statement.type.getText(sourceFile));
 		}
-		if (ts.isClassDeclaration(statement) && statement.name) {
+		if (
+			(ts.isClassDeclaration(statement) || ts.isInterfaceDeclaration(statement)) &&
+			statement.name
+		) {
 			classes.set(statement.name.text, { declaration: statement, sourceFile });
 		}
 		if (ts.isEnumDeclaration(statement)) {
@@ -46,13 +51,13 @@ function getProperties(className) {
 	if (!entry) throw new Error(`Could not find client class ${className}`);
 
 	return entry.declaration.members
-		.filter(ts.isPropertyDeclaration)
+		.filter((member) => ts.isPropertyDeclaration(member) || ts.isPropertySignature(member))
 		.filter((member) => ts.isIdentifier(member.name))
 		.filter((member) => member.name.text !== '__type')
 		.map((member) => ({
 			apiName: member.name.text,
 			type: member.type?.getText(entry.sourceFile) ?? 'string',
-			required: !member.questionToken && !member.exclamationToken,
+			required: !member.questionToken,
 			description:
 				ts
 					.getJSDocCommentsAndTags(member)
@@ -86,15 +91,20 @@ function toCamelCase(value) {
 
 const initialisms = new Map([
 	['css', 'CSS'],
+	['fps', 'FPS'],
+	['gif', 'GIF'],
 	['hcti', 'HCTI'],
 	['html', 'HTML'],
+	['javascript', 'JavaScript'],
 	['id', 'ID'],
 	['jpg', 'JPG'],
 	['ms', 'MS'],
+	['mp4', 'MP4'],
 	['pdf', 'PDF'],
 	['png', 'PNG'],
 	['url', 'URL'],
 	['webp', 'WebP'],
+	['webm', 'WebM'],
 	['xhr', 'XHR'],
 ]);
 
@@ -113,7 +123,12 @@ function toDisplayName(value) {
 }
 
 function resolveType(type) {
-	return aliases.get(type) ?? type;
+	const nonNullable = type
+		.split('|')
+		.map((part) => part.trim())
+		.filter((part) => part !== 'null' && part !== 'undefined')
+		.join(' | ');
+	return aliases.has(nonNullable) ? resolveType(aliases.get(nonNullable)) : nonNullable;
 }
 
 function toN8nProperty(property) {
@@ -123,7 +138,7 @@ function toN8nProperty(property) {
 			? ' Viewport width and viewport height must be set together.'
 			: property.apiName === 'jumbo_max_width' || property.apiName === 'jumbo_max_height'
 				? ' Jumbo max width and jumbo max height must be set together.'
-			: '';
+				: '';
 	const base = {
 		displayName: toDisplayName(property.apiName),
 		name: toCamelCase(property.apiName),
@@ -146,7 +161,18 @@ function toN8nProperty(property) {
 			...base,
 			type: 'number',
 			default: null,
-			...(nonNegative.has(property.apiName) ? { typeOptions: { minValue: 0 } } : {}),
+			...(nonNegative.has(property.apiName) ||
+			property.apiName === 'scale' ||
+			property.apiName === 'device_scale'
+				? {
+						typeOptions: {
+							...(nonNegative.has(property.apiName) ? { minValue: 0 } : {}),
+							...(['scale', 'device_scale'].includes(property.apiName)
+								? { numberPrecision: 2 }
+								: {}),
+						},
+					}
+				: {}),
 		};
 	}
 
@@ -191,7 +217,7 @@ function toN8nProperty(property) {
 		};
 	}
 
-	if (resolvedType === 'string') {
+	if (resolvedType === 'string' || resolvedType === 'number | string') {
 		return {
 			...base,
 			type: 'string',
@@ -216,7 +242,85 @@ const html = getProperties('CreateHtmlCssImageRequest').filter(
 	(property) => property.apiName !== 'html',
 );
 const url = getProperties('CreateUrlImageRequest').filter((property) => property.apiName !== 'url');
-const generatedProperties = [...shared, ...html, ...url];
+const recordingShared = getProperties('BaseCreateRecordingRequest');
+const recordingHtml = getProperties('CreateHtmlCssRecordingRequest').filter(
+	(property) => property.apiName !== 'html',
+);
+const recordingUrl = getProperties('CreateUrlRecordingRequest').filter(
+	(property) => property.apiName !== 'url',
+);
+const recordingTypeNames = [
+	'RecordingOutputOptions',
+	'RecordingImmediateTrigger',
+	'RecordingElementVisibleTrigger',
+	'RecordingFunctionCallTrigger',
+	'RecordingSimpleScrollAction',
+	'RecordingScrollAction',
+	'RecordingStallAction',
+	'RecordingLocateSelectorAction',
+	'RecordingClickAction',
+	'RecordingExecuteJavaScriptAction',
+	'RecordingErrorAction',
+	'PositionScrollTarget',
+	'CoordinatesScrollTarget',
+	'SelectorScrollTarget',
+	'ScrollStep',
+];
+const recordingFields = Object.fromEntries(
+	recordingTypeNames.map((name) => [
+		name,
+		getProperties(name)
+			.map((property) => {
+				const field = toN8nProperty(property);
+				if (!field) return undefined;
+				return {
+					...field,
+					...(property.required
+						? {
+								required: true,
+								default:
+									field.type === 'options'
+										? field.options[0].value
+										: field.type === 'string'
+											? ''
+											: field.default,
+							}
+						: {}),
+				};
+			})
+			.filter(Boolean),
+	]),
+);
+const recordingComplexFields = Object.fromEntries(
+	recordingTypeNames.map((name) => [
+		name,
+		getProperties(name)
+			.filter((property) => !toN8nProperty(property))
+			.map((property) => property.apiName),
+	]),
+);
+function recordingModels(alias) {
+	return Object.fromEntries(
+		aliases
+			.get(alias)
+			.split('|')
+			.map((name) => name.trim())
+			.filter(Boolean)
+			.map((name) => [
+				recordingFields[name].find((field) => field.name === 'type').options[0].value,
+				name,
+			]),
+	);
+}
+const generatedProperties = [
+	...shared,
+	...html,
+	...url,
+	...recordingShared,
+	...recordingHtml,
+	...recordingUrl,
+	...recordingTypeNames.flatMap(getProperties),
+];
 
 const optionOrder = [
 	'css',
@@ -303,6 +407,45 @@ export const urlClientOptions: INodeProperties[] = ${JSON.stringify(
 	null,
 	2,
 )};
+
+export const recordingDurationProperty: INodeProperties = ${JSON.stringify(
+	{
+		...toN8nProperty(recordingShared.find((property) => property.apiName === 'duration_ms')),
+		required: true,
+	},
+	null,
+	2,
+)};
+
+export const htmlRecordingClientOptions: INodeProperties[] = ${JSON.stringify(
+	serializeProperties(
+		sortProperties([
+			...recordingHtml,
+			...recordingShared.filter((property) => property.apiName !== 'duration_ms'),
+		]),
+	),
+	null,
+	2,
+)};
+
+export const urlRecordingClientOptions: INodeProperties[] = ${JSON.stringify(
+	serializeProperties(
+		sortProperties([
+			...recordingUrl,
+			...recordingShared.filter((property) => property.apiName !== 'duration_ms'),
+		]),
+	),
+	null,
+	2,
+)};
+
+export const recordingFields: Record<string, INodeProperties[]> = ${JSON.stringify(recordingFields, null, 2)};
+
+export const recordingComplexFields: Record<string, string[]> = ${JSON.stringify(recordingComplexFields, null, 2)};
+
+export const recordingActionModels: Record<string, string> = ${JSON.stringify(recordingModels('RecordingAction'), null, 2)};
+export const recordingTriggerModels: Record<string, string> = ${JSON.stringify(recordingModels('RecordingTrigger'), null, 2)};
+export const scrollTargetModels: Record<string, string> = ${JSON.stringify(recordingModels('ScrollTarget'), null, 2)};
 `;
 
 fs.mkdirSync(path.dirname(outputPath), { recursive: true });

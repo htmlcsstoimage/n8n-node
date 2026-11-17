@@ -1,6 +1,6 @@
 # HTML/CSS to Image API for n8n
 
-Generate images, website screenshots, PDFs, and signed render-on-demand URLs
+Generate images, website screenshots, PDFs, recordings, and signed render-on-demand URLs
 with the [HTML/CSS to Image API](https://htmlcsstoimage.com).
 
 [n8n](https://n8n.io/) is a workflow automation platform.
@@ -23,6 +23,9 @@ The community package name is:
 - Generate signed template or webpage URLs that render on demand
 - Delete an image by ID
 - Return image metadata, a binary PNG/JPG/WebP/PDF, or both
+- Create an MP4, WebM, or GIF recording from HTML/CSS or a webpage URL
+- Fetch a recording's status or delete a recording by ID
+- Return recording metadata, a binary media file, or both
 
 ## Credentials
 
@@ -81,6 +84,37 @@ request override rules for blocking selected browser network requests.
 2. Choose PNG, JPG, WebP, or PDF.
 3. Set **Binary Property** to the property expected by the next node, such as `data`.
 4. Connect the node to an email, Slack, cloud storage, or other file-capable node.
+
+### Record HTML/CSS or a webpage
+
+1. Set **Resource** to **Recording** and choose **Create From HTML/CSS** or **Create From URL**.
+2. Enter the HTML or URL and the **Duration MS**. For example, `5000` requests five seconds.
+3. Under **Media Options**, optionally choose MP4, WebM, or GIF, frame rate, and scale.
+4. Add a **Trigger** to wait for an element or `window.RecordingReady()`, or leave it empty to start immediately.
+5. Add ordered **Actions** to scroll, pause, find or click elements, run JavaScript, or fail a branch.
+6. Leave **Output** as **URL and Metadata** to receive `id`, `status_url`, and `recording_url` immediately.
+
+Recordings have no audio. **Options** includes duration mode, deferred rendering,
+viewport settings, CSS, and other browser settings from the official client.
+URL recordings support the same native custom-header editor as URL screenshots.
+
+Action branches and scroll destinations use native editors. The editor supports
+three levels of actions; expressions can supply API action arrays with deeper
+branches. An empty JavaScript error branch preserves the API's fail-on-error
+behavior. Enable **Ignore Script Errors** to continue without fallback actions.
+
+Choose **Binary File** or **URL, Metadata, and Binary File** to download the
+recorded media. The node requests the exact `recording_url`; that request waits
+for the recording to finish and starts rendering a deferred recording.
+
+To check progress separately, select **Fetch Status** and set **Recording ID** to
+`{{$json.id}}`. This performs one status request and returns the lifecycle state,
+attempt count, and any recording error. Use a Wait node and an If or Switch node
+for polling. `ready`, `failed`, and `cancelled` are terminal states;
+`awaiting_render` indicates deferred rendering.
+
+Select **Delete** under the Recording resource to permanently delete one recording
+per input item. Connect multiple input items to delete multiple recordings.
 
 ## TypeScript client synchronization
 

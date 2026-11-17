@@ -41,11 +41,16 @@ asking users to write JSON or encode structured values in strings.
 
 ## Current product decisions
 
-- Operations are HTML/CSS, webpage URL, template, signed URL, and single-image deletion.
+- The Image resource provides HTML/CSS, webpage URL, template, signed URL, and single-image deletion.
+- The Recording resource provides HTML/CSS and URL creation, status fetching, and single-recording deletion.
+- Recording triggers, ordered actions, scroll destinations, and branches use native controls.
+  The action editor supports three levels; expressions may supply deeper API action arrays.
+  Empty native script-error branches must preserve fail-on-error behavior. Explicit API
+  `[]` or Ignore Script Errors opts out.
 - Batch creation is intentionally not exposed in v1. Do not reintroduce a
   JSON-only batch UI. A future batch UI must support mixed HTML and URL
   variations with a coherent native n8n editor.
-- Batch deletion is not exposed; n8n can process one image ID per input item.
+- Batch deletion is not exposed; n8n can process one image or recording ID per input item.
 - Image listing is intentionally not exposed.
 - Template values use `assignmentCollection` so users can add dynamically named,
   typed properties.
